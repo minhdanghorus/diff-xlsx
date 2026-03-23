@@ -279,6 +279,120 @@ def apply_substitutions(value, sub_rules):
     return s
 
 
+# ─── Extra Report HTML Generation ────────────────────────────────────────────
+
+def generate_extra_html(diffs, headers, file1_name, file2_name, col_sub1, col_sub2):
+    """
+    Generate an HTML report showing only changed rows with post-substitution values,
+    and only the columns that had at least one difference.
+    """
+    header_strs = [normalize_header(h) for h in headers]
+
+    # Collect all column indices that differ across all changed rows
+    diff_col_indices = sorted({i for d in diffs if d["type"] == "changed" for i in d["changed"]})
+
+    if not diff_col_indices:
+        return None
+
+    diff_headers = [header_strs[i] for i in diff_col_indices]
+
+    rows_html = []
+    for d in diffs:
+        if d["type"] != "changed":
+            continue
+
+        # Apply substitutions to get the values the tool actually compared
+        r1_sub = [
+            apply_substitutions(d["row1"][i], col_sub1[i]) if col_sub1[i] else (d["row1"][i] if d["row1"][i] is not None else "")
+            for i in diff_col_indices
+        ]
+        r2_sub = [
+            apply_substitutions(d["row2"][i], col_sub2[i]) if col_sub2[i] else (d["row2"][i] if d["row2"][i] is not None else "")
+            for i in diff_col_indices
+        ]
+
+        # Map original diff_col_indices to new 0-based positions for highlighting
+        changed_new = {diff_col_indices.index(i) for i in d["changed"]}
+
+        rows_html.append(build_data_row(r1_sub, "old", "lbl-old", "OLD", d["label"], changed_new))
+        rows_html.append(build_data_row(r2_sub, "new", "lbl-new", "NEW", d["label"], changed_new))
+
+    th_cols = "".join(f"<th>{esc(h)}</th>" for h in diff_headers)
+    table_html = (
+        f"<table>"
+        f"<thead><tr><th>Row / Key</th><th>Type</th>{th_cols}</tr></thead>"
+        f"<tbody>{''.join(rows_html)}</tbody>"
+        f"</table>"
+    )
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Diff Report (Post-Substitution)</title>
+<style>
+  * {{ box-sizing: border-box; }}
+  body {{
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    margin: 24px;
+    background: #f0f2f5;
+    color: #222;
+  }}
+  h1 {{ margin-bottom: 12px; color: #1e293b; }}
+  .summary {{
+    background: #fff;
+    padding: 14px 20px;
+    border-radius: 8px;
+    margin-bottom: 22px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.12);
+  }}
+  .summary p {{ margin: 4px 0; }}
+  table {{
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.12);
+    border-radius: 8px;
+    overflow: hidden;
+  }}
+  th {{
+    background: #1e293b;
+    color: #f8fafc;
+    padding: 9px 12px;
+    text-align: left;
+    font-size: 12px;
+    white-space: nowrap;
+  }}
+  td {{
+    padding: 6px 12px;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: top;
+    word-break: break-word;
+    max-width: 280px;
+  }}
+  td.meta {{ white-space: nowrap; font-size: 11px; font-weight: bold; min-width: 90px; }}
+  td.lbl-old {{ background: #fef2f2; color: #b91c1c; border-right: 3px solid #fca5a5; }}
+  td.lbl-new {{ background: #f0fdf4; color: #15803d; border-right: 3px solid #86efac; }}
+  td.old     {{ background: #fef2f2; }}
+  td.new     {{ background: #f0fdf4; }}
+  td.cell-hl {{ background: #fef08a !important; font-weight: bold; outline: 1px solid #ca8a04; }}
+  tr:last-child td {{ border-bottom: none; }}
+</style>
+</head>
+<body>
+<h1>Diff Report (Post-Substitution Values)</h1>
+<div class="summary">
+  <p><strong>File 1:</strong> {esc(file1_name)}</p>
+  <p><strong>File 2:</strong> {esc(file2_name)}</p>
+  <p>Cell values shown after substitution rules were applied (what the tool actually compared).</p>
+  <p>Only changed rows and differing columns are included.</p>
+</div>
+{table_html}
+</body>
+</html>"""
+
+
 # ─── User Prompts ─────────────────────────────────────────────────────────────
 
 def ask_unique_key(headers):
@@ -306,6 +420,12 @@ def ask_case_sensitive():
     """Ask whether comparison should be case-sensitive. Default: yes (press Enter)."""
     answer = input("\nUse case-sensitive comparison? (yes/no) [yes]: ").strip().lower()
     return answer not in ("no", "n")
+
+
+def ask_extra_report():
+    """Ask whether to export an additional report with post-substitution values. Default: no."""
+    answer = input("\nExport additional report with post-substitution values? (yes/no) [no]: ").strip().lower()
+    return answer in ("yes", "y")
 
 
 def ask_skip_columns(headers):
@@ -727,7 +847,10 @@ def main():
         diffs = compare_by_position(headers1, rows1, rows2, case_sensitive, aliases,
                                     skip_columns, ignore_substrings, f1_name, f2_name)
 
-    # 10. Generate HTML report
+    # 10. Ask about extra post-substitution report
+    want_extra = ask_extra_report()
+
+    # 11. Generate main HTML report
     html = generate_html(
         diffs, headers1,
         f1_name, f2_name,
@@ -740,7 +863,21 @@ def main():
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html)
 
-    # 11. Print summary
+    # 12. Generate extra post-substitution report if requested
+    if want_extra:
+        header_strs = [normalize_header(h) for h in headers1]
+        col_sub1 = _build_col_subs(header_strs, ignore_substrings, f1_name)
+        col_sub2 = _build_col_subs(header_strs, ignore_substrings, f2_name)
+        extra_html = generate_extra_html(diffs, headers1, f1_name, f2_name, col_sub1, col_sub2)
+        if extra_html:
+            extra_path = os.path.join(os.getcwd(), "diff_report_substituted.html")
+            with open(extra_path, "w", encoding="utf-8") as f:
+                f.write(extra_html)
+            print(f"Extra report saved to: {extra_path}")
+        else:
+            print("No changed rows found — extra report not generated.")
+
+    # 13. Print summary
     n_changed = sum(1 for d in diffs if d["type"] == "changed")
     n_added   = sum(1 for d in diffs if d["type"] == "added")
     n_deleted = sum(1 for d in diffs if d["type"] == "deleted")
