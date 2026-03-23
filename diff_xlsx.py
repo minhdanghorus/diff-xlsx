@@ -13,6 +13,7 @@ import sys
 import csv
 import glob
 import re
+import shutil
 from openpyxl import load_workbook
 from collections import OrderedDict
 
@@ -909,16 +910,22 @@ def main():
         skip_columns=skip_columns,
     )
     if should_split:
+        # Prepare clean reports folder
+        reports_dir = os.path.join(os.getcwd(), "reports")
+        if os.path.exists(reports_dir):
+            shutil.rmtree(reports_dir)
+        os.makedirs(reports_dir)
+
         chunks = [diffs[i:i + rows_per_file] for i in range(0, max(len(diffs), 1), rows_per_file)]
         total_parts = len(chunks)
         for i, chunk in enumerate(chunks, 1):
             html = generate_html(chunk, headers1, part=i, total_parts=total_parts,
                                  base_filename="diff_report", **shared_html_kwargs)
-            out_path = os.path.join(os.getcwd(), f"diff_report_part{i}.html")
+            out_path = os.path.join(reports_dir, f"diff_report_part{i}.html")
             with open(out_path, "w", encoding="utf-8") as f:
                 f.write(html)
-        print(f"Report split into {total_parts} file(s): diff_report_part1.html ... diff_report_part{total_parts}.html")
-        out_path = os.path.join(os.getcwd(), "diff_report_part1.html")
+        print(f"Report split into {total_parts} file(s) in 'reports' folder: diff_report_part1.html ... diff_report_part{total_parts}.html")
+        out_path = os.path.join(reports_dir, "diff_report_part1.html")
     else:
         html = generate_html(diffs, headers1, **shared_html_kwargs)
         out_path = os.path.join(os.getcwd(), "diff_report.html")
@@ -943,10 +950,10 @@ def main():
                                                  base_filename="diff_report_substituted",
                                                  diff_col_indices=all_diff_col_indices)
                 if extra_html:
-                    extra_path = os.path.join(os.getcwd(), f"diff_report_substituted_part{i}.html")
+                    extra_path = os.path.join(reports_dir, f"diff_report_substituted_part{i}.html")
                     with open(extra_path, "w", encoding="utf-8") as f:
                         f.write(extra_html)
-            print(f"Extra report split into {total_parts} file(s): diff_report_substituted_part1.html ... diff_report_substituted_part{total_parts}.html")
+            print(f"Extra report split into {total_parts} file(s) in 'reports' folder: diff_report_substituted_part1.html ... diff_report_substituted_part{total_parts}.html")
         else:
             extra_html = generate_extra_html(changed_diffs, headers1, f1_name, f2_name, col_sub1, col_sub2)
             if extra_html:

@@ -1,0 +1,21 @@
+"id","name","nationality_id","gender","marital","mobile","porfolio_link","student_code","street","city","district_id","ward_id","country_id","source_type_id","source_id","apply_date","fresher_flg","fresh_graduate_flg","staff_movement_flg","ex_employee_flg","emp_id","never_recruit_flg","current_salary","expected_salary","document_type_id","identity_id","issue_date","is_talent","status"
+1,Nguyen Trong Hien,243,,Single,+84 ,,"",N/A,,,,,,,,false,,,false,,false,,,,,,,OPENING
+2,Võ Xuân Lê,243,Female,Single,+84 0903049055,,"",N/A,,,,,,,"2016-01-13",false,,,true,1533.0,false,0.0,0.0,,,,,OPENING
+3,Trần Sỹ Tuấn,243,Male,Married,+84 0387394436,,"","135B TranHungDao Street, District 1, Ho Chi Minh city",,,,243,ERP,ERP,"2014-09-16",,,,false,,,0.0,0.0,,,,,OPENING
+4,Doan Hong Phi,243,Male,Single,+84 0793884559,,"","99/6 TTH07, Tân Thới Hiệp Ward, District 12",,,,243,,,"2010-04-25",,,,false,,,,,,,,,OPENING
+5,Nguyen Cong Du,243,Male,Single,+84 0979843011,,"","24 A, road 14, Binh An ward, Dist. 2",,,,243,,,"2010-04-26",,,,false,,,,,,,,,OPENING
+6,Luu Duc Trung,243,Male,Single,+84 01998718581,,"","179/28 Kha Van Can Str., Hiep Binh Chanh Ward, Thu Duc Dist.",,,,243,ERP,ERP,"2010-05-04",,,,false,,,,,,,,,OPENING
+7,Trần Duy Dũng,243,Male,Single,+84 0904089962,,"",N/A,,,,243,,,"2014-08-28",,,,true,146.0,,,,,,,,OPENING
+8,Pham Thi Ngoc Van,243,Female,Single,+84 ,,"",N/A,,,,243,ERP,ERP,"2010-05-04",,,,false,,,,,,,,,OPENING
+10,Le Duc Binh Minh,243,Male,Single,+84 0918121060,,"",N/A,,,,243,,,"2010-05-05",,,,false,,,,,,,,,OPENING
+11,Nguyễn Thanh Tùng,243,Male,Single,+84 0792572796,,"",N/A,,,,243,Linkedin - Search,Linkedin,"2010-05-06",,,,false,,,0.0,0.0,,,,,OPENING
+13,Nguyen Kieu Uyen,243,,Single,+84 0906699332,,"",N/A,,,,243,ERP,ERP,"2010-05-06",,,,false,,,,,,,,,OPENING
+14,Luong Phu Phu,243,Male,Single,+84 0909993790,,"",N/A,,,,243,,,"2010-04-20",,,,false,,,0.0,0.0,,,,,OPENING
+15,Tran Phuong Van Quynh,243,,Single,+84 0932073320,,"",C5/22 K12 – Pham Hung Str. – Binh Chanh Dist – HCM City,,,,243,,,"2010-05-06",,,,false,,,,,,,,,OPENING
+16,Vu Ngoc Anh,243,,Single,+84 0945499148,,"","117 / F, Thanh Da building",,,,243,,,"2009-10-09",,,,false,,,,,,,,,OPENING
+17,Le Huu Chinh,243,Male,Single,+84 0985429377,,"","64 Street 15, Quarter 1, Thu Duc District, HCM City, Vietnam",,,,243,ERP,ERP,"2010-05-06",,,,false,,,,,,,,,OPENING
+18,Nguyen Minh Hieu,243,Male,Single,+84 0906499088,,"","55 Ho Van Tu street, Truong Tho ward, Thu Duc district, HCMC",,,,243,ERP,ERP,"2010-05-06",,,,false,,,,,,,,,OPENING
+19,Nguyen Van Tien,243,Male,Single,+84 0983319909,,"","173 Dang Van Ngu, 14 ward, District Phu Nhuan, HCM city, Vietnam",,,,243,Recruiter,Recruiter,"2010-05-09",,,,false,,,0.0,0.0,,,,,OPENING
+20,Nguyen Xuan Cuong,243,Male,Single,+84 0399893969,,"",N/A,,,,243,ERP,ERP,"2010-05-09",,,,false,,,,,,,,,OPENING
+21,Le Hong Hiep,243,Male,Single,+84 0972889830,,"",N/A,,,,243,ERP,ERP,"2010-05-09",,,,false,,,,,,,,,OPENING
+22,Tran Hoan Nguyen,243,Male,Single,+84 ,,"","11/28 Nguyen Huu Tien, Q.TP, THCM",,,,243,ERP,ERP,"2010-05-09",,,,false,,,,,,,,,OPENING
