@@ -360,7 +360,6 @@ def generate_extra_html(diffs, headers, file1_name, file2_name, col_sub1, col_su
     background: #fff;
     box-shadow: 0 1px 4px rgba(0,0,0,.12);
     border-radius: 8px;
-    overflow: hidden;
   }}
   th {{
     background: #1e293b;
@@ -369,6 +368,9 @@ def generate_extra_html(diffs, headers, file1_name, file2_name, col_sub1, col_su
     text-align: left;
     font-size: 12px;
     white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }}
   td {{
     padding: 6px 12px;
@@ -562,6 +564,9 @@ def _write_xlsx_header_row(ws, col_headers, styles):
     for c in range(1, len(col_headers) + 1):
         ws.cell(r, c).fill = styles["header_fill"]
         ws.cell(r, c).font = styles["header_font"]
+    # Freeze all rows above and including the header row
+    from openpyxl.utils.cell import get_column_letter
+    ws.freeze_panes = f"A{r + 1}"
 
 
 def generate_xlsx_report(diffs, headers, file1_name, file2_name, case_sensitive=True,
@@ -1014,7 +1019,6 @@ def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, i
     background: #fff;
     box-shadow: 0 1px 4px rgba(0,0,0,.12);
     border-radius: 8px;
-    overflow: hidden;
   }}
   th {{
     background: #1e293b;
@@ -1023,6 +1027,9 @@ def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, i
     text-align: left;
     font-size: 12px;
     white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }}
   td {{
     padding: 6px 12px;
