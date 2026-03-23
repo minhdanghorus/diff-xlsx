@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(source venv/Scripts/activate)",
+      "Bash(pip install:*)",
+      "Bash(pip freeze:*)",
+      "Bash(clear:*)",
+      "Bash(ls D:/distinguish-xlsx/*.py)"
+    ]
+  }
+}

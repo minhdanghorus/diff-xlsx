@@ -1,0 +1,19 @@
+id,name,gender,mobile,student_code,country_id,apply_date,ex_employee,emp_id,identity_id,issue_date,is_talent,status
+1,Nguyen Trong Hien,,,,,,f,,,,,opening
+2,Võ Xuân Lê,female,0903049065,,,1/14/2016,t,1533,,,,opening
+3,Trần Sỹ Tuấn,male,(+84)038.7394436,,243,9/17/2014,f,,,,,opening
+4,Doan Hong Phi,male,0793884559,,243,4/26/2010,f,,,,,opening
+5,Nguyen Cong Du,male,0979843011,,243,4/27/2010,f,,,,,opening
+6,Luu Duc Trung,male,01998718581,,243,5/5/2010,f,,,,,opening
+7,Trần Duy Dũng,male,0904089962,,243,8/29/2014,t,146,,,,opening
+8,Pham Thi Ngoc Van,female,,,243,5/5/2010,f,,,,,opening
+10,Le Duc Binh Minh,male,0918121060,,243,5/6/2010,f,,,,,opening
+11,Nguyễn Thanh Tùng,male,0792572796,,243,5/7/2010,f,,,,,opening
+13,Nguyen Kieu Uyen,,0906699332,,243,5/7/2010,f,,,,,opening
+14,Luong Phu Phu,male,0909993790,,243,4/21/2010,f,,,,,opening
+15,Tran Phuong Van Quynh,,0932073320,,243,5/7/2010,f,,,,,opening
+16,Vu Ngoc Anh,,0945499148,,243,10/10/2009,f,,,,,opening
+17,Le Huu Chinh,male,0985429377,,243,5/7/2010,f,,,,,opening
+18,Nguyen Minh Hieu,male,0906499088,,243,5/7/2010,f,,,,,opening
+19,Nguyen Van Tien,male,0983319909,,243,5/10/2010,f,,,,,opening
+20,Nguyen Xuan Cuong,male,0399893969,,243,5/10/2010,f,,,,,opening

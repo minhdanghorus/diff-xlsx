@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Diff Report</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    margin: 24px;
+    background: #f0f2f5;
+    color: #222;
+  }
+  h1 { margin-bottom: 12px; color: #1e293b; }
+  .summary {
+    background: #fff;
+    padding: 14px 20px;
+    border-radius: 8px;
+    margin-bottom: 22px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.12);
+  }
+  .summary p { margin: 4px 0; }
+  .cnt-chg { color: #d97706; font-weight: bold; }
+  .cnt-add { color: #16a34a; font-weight: bold; }
+  .cnt-del { color: #dc2626; font-weight: bold; }
+  .ok { color: #16a34a; font-size: 15px; background: #fff; padding: 16px 20px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.12);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th {
+    background: #1e293b;
+    color: #f8fafc;
+    padding: 9px 12px;
+    text-align: left;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  td {
+    padding: 6px 12px;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: top;
+    word-break: break-word;
+    max-width: 280px;
+  }
+  td.meta {
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: bold;
+    min-width: 90px;
+  }
+  /* Row type labels */
+  td.lbl-old { background: #fef2f2; color: #b91c1c; border-right: 3px solid #fca5a5; }
+  td.lbl-new { background: #f0fdf4; color: #15803d; border-right: 3px solid #86efac; }
+  td.lbl-add { background: #f0fdf4; color: #15803d; border-right: 3px solid #86efac; }
+  td.lbl-del { background: #fef2f2; color: #b91c1c; border-right: 3px solid #fca5a5; }
+  /* Row backgrounds */
+  td.old     { background: #fef2f2; }
+  td.new     { background: #f0fdf4; }
+  td.added   { background: #dcfce7; }
+  td.deleted { background: #fee2e2; }
+  /* Highlighted (changed) cell */
+  td.cell-hl { background: #fef08a !important; font-weight: bold; outline: 1px solid #ca8a04; }
+  tr:last-child td { border-bottom: none; }
+  /* Separator between diff groups */
+  tr.sep td { height: 6px; background: #f0f2f5; border: none; padding: 0; }
+</style>
+</head>
+<body>
+<h1>Diff Report</h1>
+<div class="summary">
+  <p><strong>File 1:</strong> ats_2.xlsx - Sheet1.csv</p>
+  <p><strong>File 2:</strong> odoo_1.xlsx - Sheet1.csv</p>
+  <p><strong>Comparison mode:</strong> Case-insensitive</p>
+  <p><strong>Substitution rules applied:</strong></p><ul>
+  <li>ats_2.xlsx - Sheet1.csv / mobile: <code>+84</code> &rarr; <em>(empty)</em></li>
+  </ul>
+  <br>
+  <p class="cnt-chg">&#9679; Changed rows: 2</p>
+  <p class="cnt-add">&#9679; Added rows &nbsp;(only in File 2): 0</p>
+  <p class="cnt-del">&#9679; Deleted rows (only in File 1): 0</p>
+</div>
+<table><thead><tr><th>Row / Key</th><th>Type</th><th>id</th><th>name</th><th>gender</th><th>mobile</th><th>student_code</th><th>country_id</th><th>apply_date</th><th>ex_employee</th><th>emp_id</th><th>identity_id</th><th>issue_date</th><th>is_talent</th><th>status</th></tr></thead><tbody><tr><td class="meta lbl-old">Key: 2</td><td class="meta lbl-old">OLD</td><td class="old">2</td><td class="old">Võ Xuân Lê</td><td class="old">Female</td><td class="old  cell-hl">+84 0903049055</td><td class="old"></td><td class="old"></td><td class="old">2016-01-13 09:00:00-08</td><td class="old  cell-hl">TRUE</td><td class="old">1533.0</td><td class="old"></td><td class="old"></td><td class="old"></td><td class="old">OPENING</td></tr><tr><td class="meta lbl-new">Key: 2</td><td class="meta lbl-new">NEW</td><td class="new">2</td><td class="new">Võ Xuân Lê</td><td class="new">female</td><td class="new  cell-hl">0903049065</td><td class="new"></td><td class="new"></td><td class="new">1/14/2016</td><td class="new  cell-hl">t</td><td class="new">1533</td><td class="new"></td><td class="new"></td><td class="new"></td><td class="new">opening</td></tr><tr><td class="meta lbl-old">Key: 7</td><td class="meta lbl-old">OLD</td><td class="old">7</td><td class="old">Trần Duy Dũng</td><td class="old">Male</td><td class="old">+84 0904089962</td><td class="old"></td><td class="old">243</td><td class="old">2014-08-28 10:00:00-07</td><td class="old  cell-hl">TRUE</td><td class="old">146.0</td><td class="old"></td><td class="old"></td><td class="old"></td><td class="old">OPENING</td></tr><tr><td class="meta lbl-new">Key: 7</td><td class="meta lbl-new">NEW</td><td class="new">7</td><td class="new">Trần Duy Dũng</td><td class="new">male</td><td class="new">0904089962</td><td class="new"></td><td class="new">243</td><td class="new">8/29/2014</td><td class="new  cell-hl">t</td><td class="new">146</td><td class="new"></td><td class="new"></td><td class="new"></td><td class="new">opening</td></tr></tbody></table>
+</body>
+</html>
