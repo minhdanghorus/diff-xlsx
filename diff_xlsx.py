@@ -204,6 +204,32 @@ def check_format(headers1, headers2):
 
 # ─── Aliases ──────────────────────────────────────────────────────────────────
 
+def load_column_widths():
+    """
+    Load column min-width definitions from column_widths.txt in the working directory.
+    Format (one per line):  ColumnName:width  (e.g. name:100px)
+    Returns dict: { column_name: width_str } or None if file not found.
+    """
+    path = os.path.join(os.getcwd(), "column_widths.txt")
+    if not os.path.isfile(path):
+        return None
+
+    widths = {}
+    print("\nLoading column_widths.txt...")
+    with open(path, encoding="utf-8") as f:
+        for lineno, line in enumerate(f, 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split(":", 1)
+            if len(parts) != 2 or not parts[1].strip():
+                print(f"  Warning: skipping malformed line {lineno}: {line!r}")
+                continue
+            widths[parts[0].strip()] = parts[1].strip()
+    print(f"  Loaded {len(widths)} column width(s): {list(widths.keys())}")
+    return widths
+
+
 def load_aliases():
     """
     Load column-specific value aliases from aliases.txt in the working directory.
@@ -697,6 +723,40 @@ def ask_extra_report():
     return answer in ("yes", "y")
 
 
+def ask_min_width_columns(headers):
+    """
+    Ask whether to apply min-width to columns in the HTML report.
+    Widths are loaded from column_widths.txt if present; otherwise falls back to
+    asking the user which columns to apply a default 100px to.
+    Returns dict { col_name: width_str } or None if not requested.
+    """
+    answer = input("\nApply minimum column width in HTML report? (yes/no) [no]: ").strip().lower()
+    if answer not in ("yes", "y"):
+        return None
+
+    header_strs = [normalize_header(h) for h in headers]
+    file_widths = load_column_widths()
+
+    if file_widths is not None:
+        # Apply file-defined widths; unlisted columns get default 100px
+        return {h: file_widths.get(h, "100px") for h in header_strs}
+
+    # No file found — warn and fall back to asking the user
+    print("  Warning: column_widths.txt not found. Falling back to default 100px.")
+    raw = input("Enter column(s) to apply min-width (comma-separated, or press Enter for all): ").strip()
+    if not raw:
+        return {h: "100px" for h in header_strs}
+
+    result = {}
+    for name in raw.split(","):
+        name = name.strip()
+        if name in header_strs:
+            result[name] = "100px"
+        else:
+            print(f"  Warning: column '{name}' not found in headers, skipping.")
+    return result
+
+
 def ask_skip_columns(headers):
     """
     Ask the user for column names to skip during comparison (comma-separated).
@@ -920,7 +980,7 @@ def _nav_html(part, total_parts, base_filename):
 def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, ignore_substrings=None,
                   total_rows_compared=0, skip_columns=None, part=1, total_parts=1, base_filename="diff_report",
                   grand_total_changed=None, grand_total_added=None, grand_total_deleted=None,
-                  grand_col_diff_counts=None):
+                  grand_col_diff_counts=None, min_width_columns=None):
     n_changed = sum(1 for d in diffs if d["type"] == "changed")
     n_added   = sum(1 for d in diffs if d["type"] == "added")
     n_deleted = sum(1 for d in diffs if d["type"] == "deleted")
@@ -974,7 +1034,12 @@ def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, i
                 f"{cells}</tr>"
             )
 
-    th_cols = "".join(f"<th>{esc(h)}</th>" for h in header_strs)
+    def _th(h):
+        width = min_width_columns.get(h) if min_width_columns else None
+        style = f' style="min-width:{width}"' if width else ""
+        return f"<th{style}>{esc(h)}</th>"
+
+    th_cols = "".join(_th(h) for h in header_strs)
 
     if diffs:
         table_html = (
@@ -1134,6 +1199,9 @@ def main():
     # 8. Ask about columns to skip
     skip_columns = ask_skip_columns(headers1)
 
+    # 9. Ask about min-width columns (HTML only)
+    min_width_columns = ask_min_width_columns(headers1) if export_format == "html" else None
+
     # 9. Without a key column, row counts must match
     if not has_key and len(rows1) != len(rows2):
         raise ValueError(
@@ -1164,6 +1232,7 @@ def main():
         ignore_substrings=ignore_substrings,
         total_rows_compared=max(len(rows1), len(rows2)),
         skip_columns=skip_columns,
+        min_width_columns=min_width_columns,
     )
 
     # Helper: resolve output path and write content
