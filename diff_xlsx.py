@@ -913,10 +913,21 @@ def _nav_html(part, total_parts, base_filename):
 
 
 def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, ignore_substrings=None,
-                  total_rows_compared=0, skip_columns=None, part=1, total_parts=1, base_filename="diff_report"):
+                  total_rows_compared=0, skip_columns=None, part=1, total_parts=1, base_filename="diff_report",
+                  grand_total_changed=None, grand_total_added=None, grand_total_deleted=None,
+                  grand_col_diff_counts=None):
     n_changed = sum(1 for d in diffs if d["type"] == "changed")
     n_added   = sum(1 for d in diffs if d["type"] == "added")
     n_deleted = sum(1 for d in diffs if d["type"] == "deleted")
+
+    def _fmt(part_count, grand_total):
+        if grand_total is None:
+            return str(part_count)
+        return f"{part_count}/{grand_total}"
+
+    chg_label = _fmt(n_changed, grand_total_changed)
+    add_label = _fmt(n_added,   grand_total_added)
+    del_label = _fmt(n_deleted, grand_total_deleted)
     header_strs = [normalize_header(h) for h in headers]
 
     # Per-column diff counts (changed rows only, excluding skipped columns)
@@ -1055,13 +1066,13 @@ def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, i
   <p><strong>Total rows compared:</strong> {total_rows_compared}</p>
   {_substitution_summary_html(ignore_substrings)}
   <br>
-  <p class="cnt-chg">&#9679; Changed rows: {n_changed}</p>
-  <p class="cnt-add">&#9679; Added rows &nbsp;(only in File 2): {n_added}</p>
-  <p class="cnt-del">&#9679; Deleted rows (only in File 1): {n_deleted}</p>
+  <p class="cnt-chg">&#9679; Changed rows: {chg_label}</p>
+  <p class="cnt-add">&#9679; Added rows &nbsp;(only in File 2): {add_label}</p>
+  <p class="cnt-del">&#9679; Deleted rows (only in File 1): {del_label}</p>
   <br>
   <p><strong>Changed cells per column:</strong></p>
   <ul>
-  {"".join(f'<li><strong>{esc(col)}:</strong> {count} row(s) differ</li>' for col, count in col_diff_counts.items() if count > 0)}
+  {"".join(f'<li><strong>{esc(col)}:</strong> {_fmt(count, grand_col_diff_counts.get(col) if grand_col_diff_counts else None)} row(s) differ</li>' for col, count in col_diff_counts.items() if count > 0 or (grand_col_diff_counts and grand_col_diff_counts.get(col, 0) > 0))}
   </ul>
 </div>
 {_nav_html(part, total_parts, base_filename)}
@@ -1179,11 +1190,28 @@ def main():
             if os.path.exists(reports_dir):
                 shutil.rmtree(reports_dir)
             os.makedirs(reports_dir)
+            grand_changed = sum(1 for d in diffs if d["type"] == "changed")
+            grand_added   = sum(1 for d in diffs if d["type"] == "added")
+            grand_deleted = sum(1 for d in diffs if d["type"] == "deleted")
+            _hstrs = [normalize_header(h) for h in headers1]
+            _skip  = skip_columns or set()
+            grand_col_counts = {h: 0 for h in _hstrs if h not in _skip}
+            for d in diffs:
+                if d["type"] == "changed":
+                    for ci in d["changed"]:
+                        col = _hstrs[ci]
+                        if col in grand_col_counts:
+                            grand_col_counts[col] += 1
             chunks = [diffs[i:i + rows_per_file] for i in range(0, max(len(diffs), 1), rows_per_file)]
             total_parts = len(chunks)
             for i, chunk in enumerate(chunks, 1):
                 html = generate_html(chunk, headers1, part=i, total_parts=total_parts,
-                                     base_filename="diff_report", **shared_kwargs)
+                                     base_filename="diff_report",
+                                     grand_total_changed=grand_changed,
+                                     grand_total_added=grand_added,
+                                     grand_total_deleted=grand_deleted,
+                                     grand_col_diff_counts=grand_col_counts,
+                                     **shared_kwargs)
                 write_report_to_dir(html, reports_dir, f"diff_report_part{i}.html")
             print(f"Report split into {total_parts} file(s) in 'reports' folder.")
             out_path = os.path.join(reports_dir, "diff_report_part1.html")
