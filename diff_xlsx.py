@@ -281,15 +281,20 @@ def apply_substitutions(value, sub_rules):
 
 # ─── Extra Report HTML Generation ────────────────────────────────────────────
 
-def generate_extra_html(diffs, headers, file1_name, file2_name, col_sub1, col_sub2):
+def generate_extra_html(diffs, headers, file1_name, file2_name, col_sub1, col_sub2,
+                        part=1, total_parts=1, base_filename="diff_report_substituted",
+                        diff_col_indices=None):
     """
     Generate an HTML report showing only changed rows with post-substitution values,
     and only the columns that had at least one difference.
+    diff_col_indices can be pre-computed from the full dataset to ensure consistent
+    column layout across split parts.
     """
     header_strs = [normalize_header(h) for h in headers]
 
     # Collect all column indices that differ across all changed rows
-    diff_col_indices = sorted({i for d in diffs if d["type"] == "changed" for i in d["changed"]})
+    if diff_col_indices is None:
+        diff_col_indices = sorted({i for d in diffs if d["type"] == "changed" for i in d["changed"]})
 
     if not diff_col_indices:
         return None
@@ -378,6 +383,9 @@ def generate_extra_html(diffs, headers, file1_name, file2_name, col_sub1, col_su
   td.new     {{ background: #f0fdf4; }}
   td.cell-hl {{ background: #fef08a !important; font-weight: bold; outline: 1px solid #ca8a04; }}
   tr:last-child td {{ border-bottom: none; }}
+  .nav {{ margin-bottom: 16px; font-size: 13px; }}
+  .nav a {{ color: #1e293b; text-decoration: none; font-weight: bold; }}
+  .nav a:hover {{ text-decoration: underline; }}
 </style>
 </head>
 <body>
@@ -388,7 +396,9 @@ def generate_extra_html(diffs, headers, file1_name, file2_name, col_sub1, col_su
   <p>Cell values shown after substitution rules were applied (what the tool actually compared).</p>
   <p>Only changed rows and differing columns are included.</p>
 </div>
+{_nav_html(part, total_parts, base_filename)}
 {table_html}
+{_nav_html(part, total_parts, base_filename)}
 </body>
 </html>"""
 
@@ -420,6 +430,24 @@ def ask_case_sensitive():
     """Ask whether comparison should be case-sensitive. Default: yes (press Enter)."""
     answer = input("\nUse case-sensitive comparison? (yes/no) [yes]: ").strip().lower()
     return answer not in ("no", "n")
+
+
+def ask_split_report():
+    """Ask whether to split the report into multiple files. Default: no.
+    Returns (should_split: bool, rows_per_file: int or None).
+    """
+    answer = input("\nSplit report into multiple files? (yes/no) [no]: ").strip().lower()
+    if answer not in ("yes", "y"):
+        return False, None
+    raw = input("Rows per file [1000]: ").strip()
+    try:
+        rows_per_file = int(raw) if raw else 1000
+        if rows_per_file < 1:
+            raise ValueError
+    except ValueError:
+        print("Invalid number, using default 1000.")
+        rows_per_file = 1000
+    return True, rows_per_file
 
 
 def ask_extra_report():
@@ -633,8 +661,23 @@ def _substitution_summary_html(ignore_substrings):
     return "\n  ".join(lines)
 
 
+def _nav_html(part, total_parts, base_filename):
+    """Build prev/next navigation HTML for split reports. Returns empty string if not split."""
+    if total_parts <= 1:
+        return ""
+    prev_link = (
+        f'<a href="{base_filename}_part{part - 1}.html">&larr; Previous</a> &nbsp;|&nbsp; '
+        if part > 1 else ""
+    )
+    next_link = (
+        f' &nbsp;|&nbsp; <a href="{base_filename}_part{part + 1}.html">Next &rarr;</a>'
+        if part < total_parts else ""
+    )
+    return f'<div class="nav">{prev_link}Part {part} of {total_parts}{next_link}</div>'
+
+
 def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, ignore_substrings=None,
-                  total_rows_compared=0, skip_columns=None):
+                  total_rows_compared=0, skip_columns=None, part=1, total_parts=1, base_filename="diff_report"):
     n_changed = sum(1 for d in diffs if d["type"] == "changed")
     n_added   = sum(1 for d in diffs if d["type"] == "added")
     n_deleted = sum(1 for d in diffs if d["type"] == "deleted")
@@ -762,6 +805,9 @@ def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, i
   tr:last-child td {{ border-bottom: none; }}
   /* Separator between diff groups */
   tr.sep td {{ height: 6px; background: #f0f2f5; border: none; padding: 0; }}
+  .nav {{ margin-bottom: 16px; font-size: 13px; }}
+  .nav a {{ color: #1e293b; text-decoration: none; font-weight: bold; }}
+  .nav a:hover {{ text-decoration: underline; }}
 </style>
 </head>
 <body>
@@ -782,7 +828,9 @@ def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, i
   {"".join(f'<li><strong>{esc(col)}:</strong> {count} row(s) differ</li>' for col, count in col_diff_counts.items() if count > 0)}
   </ul>
 </div>
+{_nav_html(part, total_parts, base_filename)}
 {table_html}
+{_nav_html(part, total_parts, base_filename)}
 </body>
 </html>"""
 
@@ -847,35 +895,65 @@ def main():
         diffs = compare_by_position(headers1, rows1, rows2, case_sensitive, aliases,
                                     skip_columns, ignore_substrings, f1_name, f2_name)
 
-    # 10. Ask about extra post-substitution report
+    # 10. Ask about extra post-substitution report and splitting
     want_extra = ask_extra_report()
+    should_split, rows_per_file = ask_split_report()
 
-    # 11. Generate main HTML report
-    html = generate_html(
-        diffs, headers1,
-        f1_name, f2_name,
-        case_sensitive,
-        ignore_substrings,
+    # 11. Generate main HTML report (split or single)
+    shared_html_kwargs = dict(
+        file1_name=f1_name,
+        file2_name=f2_name,
+        case_sensitive=case_sensitive,
+        ignore_substrings=ignore_substrings,
         total_rows_compared=max(len(rows1), len(rows2)),
         skip_columns=skip_columns,
     )
-    out_path = os.path.join(os.getcwd(), "diff_report.html")
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(html)
+    if should_split:
+        chunks = [diffs[i:i + rows_per_file] for i in range(0, max(len(diffs), 1), rows_per_file)]
+        total_parts = len(chunks)
+        for i, chunk in enumerate(chunks, 1):
+            html = generate_html(chunk, headers1, part=i, total_parts=total_parts,
+                                 base_filename="diff_report", **shared_html_kwargs)
+            out_path = os.path.join(os.getcwd(), f"diff_report_part{i}.html")
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(html)
+        print(f"Report split into {total_parts} file(s): diff_report_part1.html ... diff_report_part{total_parts}.html")
+        out_path = os.path.join(os.getcwd(), "diff_report_part1.html")
+    else:
+        html = generate_html(diffs, headers1, **shared_html_kwargs)
+        out_path = os.path.join(os.getcwd(), "diff_report.html")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(html)
 
     # 12. Generate extra post-substitution report if requested
     if want_extra:
         header_strs = [normalize_header(h) for h in headers1]
         col_sub1 = _build_col_subs(header_strs, ignore_substrings, f1_name)
         col_sub2 = _build_col_subs(header_strs, ignore_substrings, f2_name)
-        extra_html = generate_extra_html(diffs, headers1, f1_name, f2_name, col_sub1, col_sub2)
-        if extra_html:
-            extra_path = os.path.join(os.getcwd(), "diff_report_substituted.html")
-            with open(extra_path, "w", encoding="utf-8") as f:
-                f.write(extra_html)
-            print(f"Extra report saved to: {extra_path}")
-        else:
+        changed_diffs = [d for d in diffs if d["type"] == "changed"]
+        if not changed_diffs:
             print("No changed rows found — extra report not generated.")
+        elif should_split:
+            all_diff_col_indices = sorted({j for d in changed_diffs for j in d["changed"]})
+            chunks = [changed_diffs[i:i + rows_per_file] for i in range(0, max(len(changed_diffs), 1), rows_per_file)]
+            total_parts = len(chunks)
+            for i, chunk in enumerate(chunks, 1):
+                extra_html = generate_extra_html(chunk, headers1, f1_name, f2_name, col_sub1, col_sub2,
+                                                 part=i, total_parts=total_parts,
+                                                 base_filename="diff_report_substituted",
+                                                 diff_col_indices=all_diff_col_indices)
+                if extra_html:
+                    extra_path = os.path.join(os.getcwd(), f"diff_report_substituted_part{i}.html")
+                    with open(extra_path, "w", encoding="utf-8") as f:
+                        f.write(extra_html)
+            print(f"Extra report split into {total_parts} file(s): diff_report_substituted_part1.html ... diff_report_substituted_part{total_parts}.html")
+        else:
+            extra_html = generate_extra_html(changed_diffs, headers1, f1_name, f2_name, col_sub1, col_sub2)
+            if extra_html:
+                extra_path = os.path.join(os.getcwd(), "diff_report_substituted.html")
+                with open(extra_path, "w", encoding="utf-8") as f:
+                    f.write(extra_html)
+                print(f"Extra report saved to: {extra_path}")
 
     # 13. Print summary
     n_changed = sum(1 for d in diffs if d["type"] == "changed")
