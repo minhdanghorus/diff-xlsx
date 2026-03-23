@@ -404,6 +404,233 @@ def generate_extra_html(diffs, headers, file1_name, file2_name, col_sub1, col_su
 </html>"""
 
 
+# ─── CSV Report Generation ────────────────────────────────────────────────────
+
+def _summary_rows(file1_name, file2_name, case_sensitive, ignore_substrings,
+                  total_rows_compared, diffs, skip_columns, headers):
+    """Return a list of [label, value] rows for the summary section."""
+    header_strs = [normalize_header(h) for h in headers]
+    skip_columns = skip_columns or set()
+    n_changed = sum(1 for d in diffs if d["type"] == "changed")
+    n_added   = sum(1 for d in diffs if d["type"] == "added")
+    n_deleted = sum(1 for d in diffs if d["type"] == "deleted")
+
+    col_diff_counts = {h: 0 for h in header_strs if h not in skip_columns}
+    for d in diffs:
+        if d["type"] == "changed":
+            for i in d["changed"]:
+                col = header_strs[i]
+                if col in col_diff_counts:
+                    col_diff_counts[col] += 1
+
+    rows = [
+        ["File 1", file1_name],
+        ["File 2", file2_name],
+        ["Comparison mode", "Case-sensitive" if case_sensitive else "Case-insensitive"],
+        ["Total rows compared", total_rows_compared],
+        [],
+        ["Changed rows", n_changed],
+        ["Added rows (only in File 2)", n_added],
+        ["Deleted rows (only in File 1)", n_deleted],
+        [],
+        ["Changed cells per column", ""],
+    ]
+    for col, count in col_diff_counts.items():
+        if count > 0:
+            rows.append([col, count])
+    rows.append([])
+    return rows
+
+
+def generate_csv_report(diffs, headers, file1_name, file2_name, case_sensitive=True,
+                        ignore_substrings=None, total_rows_compared=0, skip_columns=None):
+    import io
+    header_strs = [normalize_header(h) for h in headers]
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    for row in _summary_rows(file1_name, file2_name, case_sensitive, ignore_substrings,
+                             total_rows_compared, diffs, skip_columns, headers):
+        writer.writerow(row)
+
+    writer.writerow(["diff_type", "row_key"] + header_strs)
+    for d in diffs:
+        if d["type"] == "changed":
+            writer.writerow(["changed_old", d["label"]] + [v if v is not None else "" for v in d["row1"]])
+            writer.writerow(["changed_new", d["label"]] + [v if v is not None else "" for v in d["row2"]])
+        elif d["type"] == "added":
+            writer.writerow(["added", d["label"]] + [v if v is not None else "" for v in d["row2"]])
+        elif d["type"] == "deleted":
+            writer.writerow(["deleted", d["label"]] + [v if v is not None else "" for v in d["row1"]])
+
+    return output.getvalue()
+
+
+def generate_extra_csv(diffs, headers, file1_name, file2_name, col_sub1, col_sub2,
+                       diff_col_indices=None):
+    import io
+    header_strs = [normalize_header(h) for h in headers]
+    if diff_col_indices is None:
+        diff_col_indices = sorted({i for d in diffs if d["type"] == "changed" for i in d["changed"]})
+    if not diff_col_indices:
+        return None
+
+    diff_headers = [header_strs[i] for i in diff_col_indices]
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["File 1", file1_name])
+    writer.writerow(["File 2", file2_name])
+    writer.writerow(["Note", "Cell values shown after substitution rules applied. Only changed rows and differing columns included."])
+    writer.writerow([])
+    writer.writerow(["diff_type", "row_key"] + diff_headers)
+
+    for d in diffs:
+        if d["type"] != "changed":
+            continue
+        r1_sub = [
+            apply_substitutions(d["row1"][i], col_sub1[i]) if col_sub1[i] else (d["row1"][i] if d["row1"][i] is not None else "")
+            for i in diff_col_indices
+        ]
+        r2_sub = [
+            apply_substitutions(d["row2"][i], col_sub2[i]) if col_sub2[i] else (d["row2"][i] if d["row2"][i] is not None else "")
+            for i in diff_col_indices
+        ]
+        writer.writerow(["changed_old", d["label"]] + r1_sub)
+        writer.writerow(["changed_new", d["label"]] + r2_sub)
+
+    return output.getvalue()
+
+
+# ─── XLSX Report Generation ───────────────────────────────────────────────────
+
+def _xlsx_styles():
+    from openpyxl.styles import PatternFill, Font, Alignment
+    return {
+        "header_fill":  PatternFill("solid", fgColor="1E293B"),
+        "header_font":  Font(color="F8FAFC", bold=True),
+        "old_fill":     PatternFill("solid", fgColor="FEE2E2"),
+        "new_fill":     PatternFill("solid", fgColor="F0FDF4"),
+        "added_fill":   PatternFill("solid", fgColor="DCFCE7"),
+        "deleted_fill": PatternFill("solid", fgColor="FEE2E2"),
+        "hl_fill":      PatternFill("solid", fgColor="FEF08A"),
+        "label_font":   Font(bold=True),
+        "wrap":         Alignment(wrap_text=True, vertical="top"),
+    }
+
+
+def _write_xlsx_summary(ws, summary_rows, styles):
+    from openpyxl.styles import Font
+    for row in summary_rows:
+        if not row:
+            ws.append([])
+        else:
+            ws.append(row)
+            ws.cell(ws.max_row, 1).font = Font(bold=True)
+
+
+def _write_xlsx_diff_rows(ws, diffs, header_strs, styles, col_offset=2):
+    """Write diff data rows. col_offset=2 accounts for diff_type and row_key columns."""
+    for d in diffs:
+        dtype = d["type"]
+        if dtype == "changed":
+            for side, row_data, row_fill in [("changed_old", d["row1"], styles["old_fill"]),
+                                              ("changed_new", d["row2"], styles["new_fill"])]:
+                ws.append([side, d["label"]] + [v if v is not None else "" for v in row_data])
+                r = ws.max_row
+                for c in range(1, len(header_strs) + col_offset + 1):
+                    ws.cell(r, c).fill = row_fill
+                    ws.cell(r, c).alignment = styles["wrap"]
+                for i in d["changed"]:
+                    ws.cell(r, col_offset + 1 + i).fill = styles["hl_fill"]
+        elif dtype == "added":
+            ws.append(["added", d["label"]] + [v if v is not None else "" for v in d["row2"]])
+            r = ws.max_row
+            for c in range(1, len(header_strs) + col_offset + 1):
+                ws.cell(r, c).fill = styles["added_fill"]
+                ws.cell(r, c).alignment = styles["wrap"]
+        elif dtype == "deleted":
+            ws.append(["deleted", d["label"]] + [v if v is not None else "" for v in d["row1"]])
+            r = ws.max_row
+            for c in range(1, len(header_strs) + col_offset + 1):
+                ws.cell(r, c).fill = styles["deleted_fill"]
+                ws.cell(r, c).alignment = styles["wrap"]
+
+
+def _write_xlsx_header_row(ws, col_headers, styles):
+    ws.append(col_headers)
+    r = ws.max_row
+    for c in range(1, len(col_headers) + 1):
+        ws.cell(r, c).fill = styles["header_fill"]
+        ws.cell(r, c).font = styles["header_font"]
+
+
+def generate_xlsx_report(diffs, headers, file1_name, file2_name, case_sensitive=True,
+                         ignore_substrings=None, total_rows_compared=0, skip_columns=None):
+    from openpyxl import Workbook
+    header_strs = [normalize_header(h) for h in headers]
+    styles = _xlsx_styles()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Diff"
+
+    summary = _summary_rows(file1_name, file2_name, case_sensitive, ignore_substrings,
+                            total_rows_compared, diffs, skip_columns, headers)
+    _write_xlsx_summary(ws, summary, styles)
+    _write_xlsx_header_row(ws, ["diff_type", "row_key"] + header_strs, styles)
+    _write_xlsx_diff_rows(ws, diffs, header_strs, styles)
+    return wb
+
+
+def generate_extra_xlsx(diffs, headers, file1_name, file2_name, col_sub1, col_sub2,
+                        diff_col_indices=None):
+    from openpyxl import Workbook
+    header_strs = [normalize_header(h) for h in headers]
+    if diff_col_indices is None:
+        diff_col_indices = sorted({i for d in diffs if d["type"] == "changed" for i in d["changed"]})
+    if not diff_col_indices:
+        return None
+
+    diff_headers = [header_strs[i] for i in diff_col_indices]
+    styles = _xlsx_styles()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Diff (Post-Substitution)"
+
+    from openpyxl.styles import Font
+    for label, value in [("File 1", file1_name), ("File 2", file2_name),
+                         ("Note", "Cell values after substitution rules applied. Only changed rows and differing columns.")]:
+        ws.append([label, value])
+        ws.cell(ws.max_row, 1).font = Font(bold=True)
+    ws.append([])
+
+    _write_xlsx_header_row(ws, ["diff_type", "row_key"] + diff_headers, styles)
+
+    for d in diffs:
+        if d["type"] != "changed":
+            continue
+        r1_sub = [
+            apply_substitutions(d["row1"][i], col_sub1[i]) if col_sub1[i] else (d["row1"][i] if d["row1"][i] is not None else "")
+            for i in diff_col_indices
+        ]
+        r2_sub = [
+            apply_substitutions(d["row2"][i], col_sub2[i]) if col_sub2[i] else (d["row2"][i] if d["row2"][i] is not None else "")
+            for i in diff_col_indices
+        ]
+        changed_new = {diff_col_indices.index(i) for i in d["changed"]}
+
+        for side, row_data, row_fill in [("changed_old", r1_sub, styles["old_fill"]),
+                                          ("changed_new", r2_sub, styles["new_fill"])]:
+            ws.append([side, d["label"]] + row_data)
+            r = ws.max_row
+            for c in range(1, len(diff_headers) + 3):
+                ws.cell(r, c).fill = row_fill
+                ws.cell(r, c).alignment = styles["wrap"]
+            for ci in changed_new:
+                ws.cell(r, 3 + ci).fill = styles["hl_fill"]
+
+    return wb
+
+
 # ─── User Prompts ─────────────────────────────────────────────────────────────
 
 def ask_unique_key(headers):
@@ -431,6 +658,14 @@ def ask_case_sensitive():
     """Ask whether comparison should be case-sensitive. Default: yes (press Enter)."""
     answer = input("\nUse case-sensitive comparison? (yes/no) [yes]: ").strip().lower()
     return answer not in ("no", "n")
+
+
+def ask_export_format():
+    """Ask the user for the export format. Default: html."""
+    raw = input("\nExport format (html/csv/xlsx) [html]: ").strip().lower()
+    if raw in ("csv", "xlsx"):
+        return raw
+    return "html"
 
 
 def ask_split_report():
@@ -859,7 +1094,10 @@ def main():
     check_format(headers1, headers2)
     print("  OK — columns match.")
 
-    # 4. Load aliases and substitution rules
+    # 4. Ask export format (before all other prompts)
+    export_format = ask_export_format()
+
+    # 5. Load aliases and substitution rules
     aliases = load_aliases()
     ignore_substrings = load_ignore_substrings()
     if aliases:
@@ -869,23 +1107,23 @@ def main():
                 print(f"  Warning: alias column '{col}' not found in headers, skipping.")
                 del aliases[col]
 
-    # 5. Ask about unique key column
+    # 6. Ask about unique key column
     has_key, key_col = ask_unique_key(headers1)
 
-    # 6. Ask about comparison mode
+    # 7. Ask about comparison mode
     case_sensitive = ask_case_sensitive()
 
-    # 7. Ask about columns to skip
+    # 8. Ask about columns to skip
     skip_columns = ask_skip_columns(headers1)
 
-    # 8. Without a key column, row counts must match
+    # 9. Without a key column, row counts must match
     if not has_key and len(rows1) != len(rows2):
         raise ValueError(
             f"Row count mismatch (File1={len(rows1)}, File2={len(rows2)}).\n"
             f"Tip: use a unique key column to support added/deleted row detection."
         )
 
-    # 9. Compare
+    # 10. Compare
     print("\nComparing rows...")
     f1_name = os.path.basename(file1)
     f2_name = os.path.basename(file2)
@@ -896,12 +1134,12 @@ def main():
         diffs = compare_by_position(headers1, rows1, rows2, case_sensitive, aliases,
                                     skip_columns, ignore_substrings, f1_name, f2_name)
 
-    # 10. Ask about extra post-substitution report and splitting
+    # 11. Ask about extra post-substitution report (and split only for HTML)
     want_extra = ask_extra_report()
-    should_split, rows_per_file = ask_split_report()
+    should_split, rows_per_file = ask_split_report() if export_format == "html" else (False, None)
 
-    # 11. Generate main HTML report (split or single)
-    shared_html_kwargs = dict(
+    # 12. Build shared kwargs for report generators
+    shared_kwargs = dict(
         file1_name=f1_name,
         file2_name=f2_name,
         case_sensitive=case_sensitive,
@@ -909,30 +1147,57 @@ def main():
         total_rows_compared=max(len(rows1), len(rows2)),
         skip_columns=skip_columns,
     )
-    if should_split:
-        # Prepare clean reports folder
-        reports_dir = os.path.join(os.getcwd(), "reports")
-        if os.path.exists(reports_dir):
-            shutil.rmtree(reports_dir)
-        os.makedirs(reports_dir)
 
-        chunks = [diffs[i:i + rows_per_file] for i in range(0, max(len(diffs), 1), rows_per_file)]
-        total_parts = len(chunks)
-        for i, chunk in enumerate(chunks, 1):
-            html = generate_html(chunk, headers1, part=i, total_parts=total_parts,
-                                 base_filename="diff_report", **shared_html_kwargs)
-            out_path = os.path.join(reports_dir, f"diff_report_part{i}.html")
-            with open(out_path, "w", encoding="utf-8") as f:
-                f.write(html)
-        print(f"Report split into {total_parts} file(s) in 'reports' folder: diff_report_part1.html ... diff_report_part{total_parts}.html")
-        out_path = os.path.join(reports_dir, "diff_report_part1.html")
-    else:
-        html = generate_html(diffs, headers1, **shared_html_kwargs)
-        out_path = os.path.join(os.getcwd(), "diff_report.html")
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(html)
+    # Helper: resolve output path and write content
+    def write_report(content, filename, binary=False):
+        mode = "wb" if binary else "w"
+        encoding = None if binary else "utf-8"
+        path = os.path.join(os.getcwd(), filename)
+        with open(path, mode, encoding=encoding) as fh:
+            if binary:
+                content.save(fh)
+            else:
+                fh.write(content)
+        return path
 
-    # 12. Generate extra post-substitution report if requested
+    def write_report_to_dir(content, directory, filename, binary=False):
+        mode = "wb" if binary else "w"
+        encoding = None if binary else "utf-8"
+        path = os.path.join(directory, filename)
+        with open(path, mode, encoding=encoding) as fh:
+            if binary:
+                content.save(fh)
+            else:
+                fh.write(content)
+        return path
+
+    # 13. Generate main report
+    out_path = None
+    if export_format == "html":
+        if should_split:
+            reports_dir = os.path.join(os.getcwd(), "reports")
+            if os.path.exists(reports_dir):
+                shutil.rmtree(reports_dir)
+            os.makedirs(reports_dir)
+            chunks = [diffs[i:i + rows_per_file] for i in range(0, max(len(diffs), 1), rows_per_file)]
+            total_parts = len(chunks)
+            for i, chunk in enumerate(chunks, 1):
+                html = generate_html(chunk, headers1, part=i, total_parts=total_parts,
+                                     base_filename="diff_report", **shared_kwargs)
+                write_report_to_dir(html, reports_dir, f"diff_report_part{i}.html")
+            print(f"Report split into {total_parts} file(s) in 'reports' folder.")
+            out_path = os.path.join(reports_dir, "diff_report_part1.html")
+        else:
+            html = generate_html(diffs, headers1, **shared_kwargs)
+            out_path = write_report(html, "diff_report.html")
+    elif export_format == "csv":
+        content = generate_csv_report(diffs, headers1, **shared_kwargs)
+        out_path = write_report(content, "diff_report.csv")
+    elif export_format == "xlsx":
+        wb = generate_xlsx_report(diffs, headers1, **shared_kwargs)
+        out_path = write_report(wb, "diff_report.xlsx", binary=True)
+
+    # 14. Generate extra post-substitution report if requested
     if want_extra:
         header_strs = [normalize_header(h) for h in headers1]
         col_sub1 = _build_col_subs(header_strs, ignore_substrings, f1_name)
@@ -940,7 +1205,7 @@ def main():
         changed_diffs = [d for d in diffs if d["type"] == "changed"]
         if not changed_diffs:
             print("No changed rows found — extra report not generated.")
-        elif should_split:
+        elif export_format == "html" and should_split:
             all_diff_col_indices = sorted({j for d in changed_diffs for j in d["changed"]})
             chunks = [changed_diffs[i:i + rows_per_file] for i in range(0, max(len(changed_diffs), 1), rows_per_file)]
             total_parts = len(chunks)
@@ -950,19 +1215,25 @@ def main():
                                                  base_filename="diff_report_substituted",
                                                  diff_col_indices=all_diff_col_indices)
                 if extra_html:
-                    extra_path = os.path.join(reports_dir, f"diff_report_substituted_part{i}.html")
-                    with open(extra_path, "w", encoding="utf-8") as f:
-                        f.write(extra_html)
-            print(f"Extra report split into {total_parts} file(s) in 'reports' folder: diff_report_substituted_part1.html ... diff_report_substituted_part{total_parts}.html")
-        else:
+                    write_report_to_dir(extra_html, reports_dir, f"diff_report_substituted_part{i}.html")
+            print(f"Extra report split into {total_parts} file(s) in 'reports' folder.")
+        elif export_format == "html":
             extra_html = generate_extra_html(changed_diffs, headers1, f1_name, f2_name, col_sub1, col_sub2)
             if extra_html:
-                extra_path = os.path.join(os.getcwd(), "diff_report_substituted.html")
-                with open(extra_path, "w", encoding="utf-8") as f:
-                    f.write(extra_html)
+                extra_path = write_report(extra_html, "diff_report_substituted.html")
+                print(f"Extra report saved to: {extra_path}")
+        elif export_format == "csv":
+            content = generate_extra_csv(changed_diffs, headers1, f1_name, f2_name, col_sub1, col_sub2)
+            if content:
+                extra_path = write_report(content, "diff_report_substituted.csv")
+                print(f"Extra report saved to: {extra_path}")
+        elif export_format == "xlsx":
+            wb = generate_extra_xlsx(changed_diffs, headers1, f1_name, f2_name, col_sub1, col_sub2)
+            if wb:
+                extra_path = write_report(wb, "diff_report_substituted.xlsx", binary=True)
                 print(f"Extra report saved to: {extra_path}")
 
-    # 13. Print summary
+    # 15. Print summary
     n_changed = sum(1 for d in diffs if d["type"] == "changed")
     n_added   = sum(1 for d in diffs if d["type"] == "added")
     n_deleted = sum(1 for d in diffs if d["type"] == "deleted")
