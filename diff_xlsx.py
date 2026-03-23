@@ -513,11 +513,22 @@ def _substitution_summary_html(ignore_substrings):
     return "\n  ".join(lines)
 
 
-def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, ignore_substrings=None):
+def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, ignore_substrings=None,
+                  total_rows_compared=0, skip_columns=None):
     n_changed = sum(1 for d in diffs if d["type"] == "changed")
     n_added   = sum(1 for d in diffs if d["type"] == "added")
     n_deleted = sum(1 for d in diffs if d["type"] == "deleted")
     header_strs = [normalize_header(h) for h in headers]
+
+    # Per-column diff counts (changed rows only, excluding skipped columns)
+    skip_columns = skip_columns or set()
+    col_diff_counts = {h: 0 for h in header_strs if h not in skip_columns}
+    for d in diffs:
+        if d["type"] == "changed":
+            for i in d["changed"]:
+                col = header_strs[i]
+                if col in col_diff_counts:
+                    col_diff_counts[col] += 1
 
     rows_html = []
     for d in diffs:
@@ -639,11 +650,17 @@ def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, i
   <p><strong>File 1:</strong> {esc(file1_name)}</p>
   <p><strong>File 2:</strong> {esc(file2_name)}</p>
   <p><strong>Comparison mode:</strong> {"Case-sensitive" if case_sensitive else "Case-insensitive"}</p>
+  <p><strong>Total rows compared:</strong> {total_rows_compared}</p>
   {_substitution_summary_html(ignore_substrings)}
   <br>
   <p class="cnt-chg">&#9679; Changed rows: {n_changed}</p>
   <p class="cnt-add">&#9679; Added rows &nbsp;(only in File 2): {n_added}</p>
   <p class="cnt-del">&#9679; Deleted rows (only in File 1): {n_deleted}</p>
+  <br>
+  <p><strong>Changed cells per column:</strong></p>
+  <ul>
+  {"".join(f'<li><strong>{esc(col)}:</strong> {count} row(s) differ</li>' for col, count in col_diff_counts.items() if count > 0)}
+  </ul>
 </div>
 {table_html}
 </body>
@@ -716,6 +733,8 @@ def main():
         f1_name, f2_name,
         case_sensitive,
         ignore_substrings,
+        total_rows_compared=max(len(rows1), len(rows2)),
+        skip_columns=skip_columns,
     )
     out_path = os.path.join(os.getcwd(), "diff_report.html")
     with open(out_path, "w", encoding="utf-8") as f:
