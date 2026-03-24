@@ -423,7 +423,7 @@ def generate_extra_html(diffs, headers, file1_name, file2_name, col_sub1, col_su
   <p><strong>File 1:</strong> {esc(file1_name)}</p>
   <p><strong>File 2:</strong> {esc(file2_name)}</p>
   <p>Cell values shown after substitution rules were applied (what the tool actually compared).</p>
-  <p>Only changed rows and differing columns are included.</p>
+  <p>Only Differing rows and differing columns are included.</p>
 </div>
 {_nav_html(part, total_parts, base_filename)}
 {table_html}
@@ -457,11 +457,11 @@ def _summary_rows(file1_name, file2_name, case_sensitive, ignore_substrings,
         ["Comparison mode", "Case-sensitive" if case_sensitive else "Case-insensitive"],
         ["Total rows compared", total_rows_compared],
         [],
-        ["Changed rows", n_changed],
+        ["Differing rows", n_changed],
         ["Added rows (only in File 2)", n_added],
         ["Deleted rows (only in File 1)", n_deleted],
         [],
-        ["Changed cells per column", ""],
+        ["Differing cells per column", ""],
     ]
     for col, count in col_diff_counts.items():
         if count > 0:
@@ -1138,11 +1138,11 @@ def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, i
   <p><strong>Total rows compared:</strong> {total_rows_compared}</p>
   {_substitution_summary_html(ignore_substrings)}
   <br>
-  <p class="cnt-chg">&#9679; Changed rows: {chg_label}</p>
+  <p class="cnt-chg">&#9679; Differing rows: {chg_label}</p>
   <p class="cnt-add">&#9679; Added rows &nbsp;(only in File 2): {add_label}</p>
   <p class="cnt-del">&#9679; Deleted rows (only in File 1): {del_label}</p>
   <br>
-  <p><strong>Changed cells per column:</strong></p>
+  <p><strong>Differing cells per column:</strong></p>
   <ul>
   {"".join(f'<li><strong>{esc(col)}:</strong> {_fmt(count, grand_col_diff_counts.get(col) if grand_col_diff_counts else None)} row(s) differ</li>' for col, count in col_diff_counts.items() if count > 0 or (grand_col_diff_counts and grand_col_diff_counts.get(col, 0) > 0))}
   </ul>
@@ -1232,7 +1232,6 @@ def main():
         ignore_substrings=ignore_substrings,
         total_rows_compared=max(len(rows1), len(rows2)),
         skip_columns=skip_columns,
-        min_width_columns=min_width_columns,
     )
 
     # Helper: resolve output path and write content
@@ -1287,12 +1286,13 @@ def main():
                                      grand_total_added=grand_added,
                                      grand_total_deleted=grand_deleted,
                                      grand_col_diff_counts=grand_col_counts,
+                                     min_width_columns=min_width_columns,
                                      **shared_kwargs)
                 write_report_to_dir(html, reports_dir, f"diff_report_part{i}.html")
             print(f"Report split into {total_parts} file(s) in 'reports' folder.")
             out_path = os.path.join(reports_dir, "diff_report_part1.html")
         else:
-            html = generate_html(diffs, headers1, **shared_kwargs)
+            html = generate_html(diffs, headers1, min_width_columns=min_width_columns, **shared_kwargs)
             out_path = write_report(html, "diff_report.html")
     elif export_format == "csv":
         content = generate_csv_report(diffs, headers1, **shared_kwargs)
