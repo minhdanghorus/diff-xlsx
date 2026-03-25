@@ -306,6 +306,35 @@ def apply_substitutions(value, sub_rules):
     return s
 
 
+def _filter_for_report(diffs, headers, hide_columns):
+    """
+    Remove hidden columns from headers and diff row data.
+    Returns (visible_headers, filtered_diffs) where filtered_diffs have:
+      - row1/row2 values stripped to visible columns only
+      - 'changed' index set remapped to new positional indices
+    If hide_columns is empty/None, returns originals unchanged.
+    """
+    if not hide_columns:
+        return headers, diffs
+
+    header_strs = [normalize_header(h) for h in headers]
+    hide_idx = {i for i, h in enumerate(header_strs) if h in hide_columns}
+    visible_idx = [i for i in range(len(header_strs)) if i not in hide_idx]
+    visible_headers = [headers[i] for i in visible_idx]
+    old_to_new = {old: new for new, old in enumerate(visible_idx)}
+
+    filtered_diffs = []
+    for d in diffs:
+        fd = dict(d)
+        if d["row1"] is not None:
+            fd["row1"] = [d["row1"][i] for i in visible_idx]
+        if d["row2"] is not None:
+            fd["row2"] = [d["row2"][i] for i in visible_idx]
+        fd["changed"] = {old_to_new[i] for i in d["changed"] if i in old_to_new}
+        filtered_diffs.append(fd)
+    return visible_headers, filtered_diffs
+
+
 # ─── Extra Report HTML Generation ────────────────────────────────────────────
 
 def generate_extra_html(diffs, headers, file1_name, file2_name, col_sub1, col_sub2,
@@ -435,15 +464,19 @@ def generate_extra_html(diffs, headers, file1_name, file2_name, col_sub1, col_su
 # ─── CSV Report Generation ────────────────────────────────────────────────────
 
 def _summary_rows(file1_name, file2_name, case_sensitive, ignore_substrings,
-                  total_rows_compared, diffs, skip_columns, headers):
+                  total_rows_compared, diffs, skip_columns, headers,
+                  hide_columns=None, keep_in_summary=True):
     """Return a list of [label, value] rows for the summary section."""
     header_strs = [normalize_header(h) for h in headers]
     skip_columns = skip_columns or set()
+    hide_columns = hide_columns or set()
     n_changed = sum(1 for d in diffs if d["type"] == "changed")
     n_added   = sum(1 for d in diffs if d["type"] == "added")
     n_deleted = sum(1 for d in diffs if d["type"] == "deleted")
 
-    col_diff_counts = {h: 0 for h in header_strs if h not in skip_columns}
+    # Exclude skip_columns always; exclude hide_columns from summary only when keep_in_summary=False
+    summary_exclude = skip_columns if keep_in_summary else (skip_columns | hide_columns)
+    col_diff_counts = {h: 0 for h in header_strs if h not in summary_exclude}
     for d in diffs:
         if d["type"] == "changed":
             for i in d["changed"]:
@@ -471,18 +504,21 @@ def _summary_rows(file1_name, file2_name, case_sensitive, ignore_substrings,
 
 
 def generate_csv_report(diffs, headers, file1_name, file2_name, case_sensitive=True,
-                        ignore_substrings=None, total_rows_compared=0, skip_columns=None):
+                        ignore_substrings=None, total_rows_compared=0, skip_columns=None,
+                        hide_columns=None, keep_in_summary=True):
     import io
-    header_strs = [normalize_header(h) for h in headers]
     output = io.StringIO()
     writer = csv.writer(output)
 
     for row in _summary_rows(file1_name, file2_name, case_sensitive, ignore_substrings,
-                             total_rows_compared, diffs, skip_columns, headers):
+                             total_rows_compared, diffs, skip_columns, headers,
+                             hide_columns=hide_columns, keep_in_summary=keep_in_summary):
         writer.writerow(row)
 
-    writer.writerow(["diff_type", "row_key"] + header_strs)
-    for d in diffs:
+    visible_headers, filtered_diffs = _filter_for_report(diffs, headers, hide_columns)
+    visible_strs = [normalize_header(h) for h in visible_headers]
+    writer.writerow(["diff_type", "row_key"] + visible_strs)
+    for d in filtered_diffs:
         if d["type"] == "changed":
             writer.writerow(["changed_old", d["label"]] + [v if v is not None else "" for v in d["row1"]])
             writer.writerow(["changed_new", d["label"]] + [v if v is not None else "" for v in d["row2"]])
@@ -596,19 +632,23 @@ def _write_xlsx_header_row(ws, col_headers, styles):
 
 
 def generate_xlsx_report(diffs, headers, file1_name, file2_name, case_sensitive=True,
-                         ignore_substrings=None, total_rows_compared=0, skip_columns=None):
+                         ignore_substrings=None, total_rows_compared=0, skip_columns=None,
+                         hide_columns=None, keep_in_summary=True):
     from openpyxl import Workbook
-    header_strs = [normalize_header(h) for h in headers]
     styles = _xlsx_styles()
     wb = Workbook()
     ws = wb.active
     ws.title = "Diff"
 
     summary = _summary_rows(file1_name, file2_name, case_sensitive, ignore_substrings,
-                            total_rows_compared, diffs, skip_columns, headers)
+                            total_rows_compared, diffs, skip_columns, headers,
+                            hide_columns=hide_columns, keep_in_summary=keep_in_summary)
     _write_xlsx_summary(ws, summary, styles)
-    _write_xlsx_header_row(ws, ["diff_type", "row_key"] + header_strs, styles)
-    _write_xlsx_diff_rows(ws, diffs, header_strs, styles)
+
+    visible_headers, filtered_diffs = _filter_for_report(diffs, headers, hide_columns)
+    visible_strs = [normalize_header(h) for h in visible_headers]
+    _write_xlsx_header_row(ws, ["diff_type", "row_key"] + visible_strs, styles)
+    _write_xlsx_diff_rows(ws, filtered_diffs, visible_strs, styles)
     return wb
 
 
@@ -775,6 +815,43 @@ def ask_skip_columns(headers):
         else:
             print(f"  Warning: column '{name}' not found in headers, skipping.")
     return skip
+
+
+def ask_hide_columns(headers):
+    """
+    Ask whether to hide columns from the report output (default: no).
+    If yes, show the column list and ask which to hide (comma-separated).
+    Then ask whether to still show those columns in the summary (default: yes).
+    Returns (hide_columns: set, keep_in_summary: bool).
+    """
+    answer = input("\nHide any columns from the report? (yes/no) [no]: ").strip().lower()
+    if answer not in ("yes", "y"):
+        return set(), True
+
+    header_strs = [normalize_header(h) for h in headers]
+    print("Available columns:")
+    for i, h in enumerate(header_strs, 1):
+        print(f"  {i}. {h}")
+
+    raw = input("Enter column(s) to hide (comma-separated): ").strip()
+    if not raw:
+        print("  No columns specified — nothing will be hidden.")
+        return set(), True
+
+    hide = set()
+    for name in raw.split(","):
+        name = name.strip()
+        if name in header_strs:
+            hide.add(name)
+        else:
+            print(f"  Warning: column '{name}' not found in headers, skipping.")
+
+    if not hide:
+        return set(), True
+
+    ans2 = input("\nKeep hidden column data in the summary? (yes/no) [yes]: ").strip().lower()
+    keep_in_summary = ans2 not in ("no", "n")
+    return hide, keep_in_summary
 
 
 # ─── Comparison ───────────────────────────────────────────────────────────────
@@ -980,7 +1057,8 @@ def _nav_html(part, total_parts, base_filename):
 def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, ignore_substrings=None,
                   total_rows_compared=0, skip_columns=None, part=1, total_parts=1, base_filename="diff_report",
                   grand_total_changed=None, grand_total_added=None, grand_total_deleted=None,
-                  grand_col_diff_counts=None, min_width_columns=None):
+                  grand_col_diff_counts=None, min_width_columns=None,
+                  hide_columns=None, keep_in_summary=True):
     n_changed = sum(1 for d in diffs if d["type"] == "changed")
     n_added   = sum(1 for d in diffs if d["type"] == "added")
     n_deleted = sum(1 for d in diffs if d["type"] == "deleted")
@@ -995,9 +1073,11 @@ def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, i
     del_label = _fmt(n_deleted, grand_total_deleted)
     header_strs = [normalize_header(h) for h in headers]
 
-    # Per-column diff counts (changed rows only, excluding skipped columns)
+    # Per-column diff counts for summary (use original diffs + full headers)
     skip_columns = skip_columns or set()
-    col_diff_counts = {h: 0 for h in header_strs if h not in skip_columns}
+    hide_columns = hide_columns or set()
+    summary_exclude = skip_columns if keep_in_summary else (skip_columns | hide_columns)
+    col_diff_counts = {h: 0 for h in header_strs if h not in summary_exclude}
     for d in diffs:
         if d["type"] == "changed":
             for i in d["changed"]:
@@ -1005,8 +1085,12 @@ def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, i
                 if col in col_diff_counts:
                     col_diff_counts[col] += 1
 
+    # Filter hidden columns for the table only
+    visible_headers, filtered_diffs = _filter_for_report(diffs, headers, hide_columns)
+    visible_strs = [normalize_header(h) for h in visible_headers]
+
     rows_html = []
-    for d in diffs:
+    for d in filtered_diffs:
         dtype   = d["type"]
         label   = d["label"]
         changed = d["changed"]
@@ -1039,9 +1123,9 @@ def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, i
         style = f' style="min-width:{width}"' if width else ""
         return f"<th{style}>{esc(h)}</th>"
 
-    th_cols = "".join(_th(h) for h in header_strs)
+    th_cols = "".join(_th(h) for h in visible_strs)
 
-    if diffs:
+    if filtered_diffs:
         table_html = (
             f"<table>"
             f"<thead><tr><th>Row / Key</th><th>Type</th>{th_cols}</tr></thead>"
@@ -1220,11 +1304,14 @@ def main():
         diffs = compare_by_position(headers1, rows1, rows2, case_sensitive, aliases,
                                     skip_columns, ignore_substrings, f1_name, f2_name)
 
-    # 11. Ask about extra post-substitution report (and split only for HTML)
+    # 11. Ask about hiding columns from the report
+    hide_columns, keep_in_summary = ask_hide_columns(headers1)
+
+    # 12. Ask about extra post-substitution report (and split only for HTML)
     want_extra = ask_extra_report()
     should_split, rows_per_file = ask_split_report() if export_format == "html" else (False, None)
 
-    # 12. Build shared kwargs for report generators
+    # 13. Build shared kwargs for report generators
     shared_kwargs = dict(
         file1_name=f1_name,
         file2_name=f2_name,
@@ -1232,6 +1319,8 @@ def main():
         ignore_substrings=ignore_substrings,
         total_rows_compared=max(len(rows1), len(rows2)),
         skip_columns=skip_columns,
+        hide_columns=hide_columns,
+        keep_in_summary=keep_in_summary,
     )
 
     # Helper: resolve output path and write content
@@ -1257,7 +1346,7 @@ def main():
                 fh.write(content)
         return path
 
-    # 13. Generate main report
+    # 14. Generate main report
     out_path = None
     if export_format == "html":
         if should_split:
@@ -1270,7 +1359,9 @@ def main():
             grand_deleted = sum(1 for d in diffs if d["type"] == "deleted")
             _hstrs = [normalize_header(h) for h in headers1]
             _skip  = skip_columns or set()
-            grand_col_counts = {h: 0 for h in _hstrs if h not in _skip}
+            _hide  = hide_columns or set()
+            _summary_exclude = _skip if keep_in_summary else (_skip | _hide)
+            grand_col_counts = {h: 0 for h in _hstrs if h not in _summary_exclude}
             for d in diffs:
                 if d["type"] == "changed":
                     for ci in d["changed"]:
@@ -1301,7 +1392,7 @@ def main():
         wb = generate_xlsx_report(diffs, headers1, **shared_kwargs)
         out_path = write_report(wb, "diff_report.xlsx", binary=True)
 
-    # 14. Generate extra post-substitution report if requested
+    # 15. Generate extra post-substitution report if requested
     if want_extra:
         header_strs = [normalize_header(h) for h in headers1]
         col_sub1 = _build_col_subs(header_strs, ignore_substrings, f1_name)
@@ -1337,7 +1428,7 @@ def main():
                 extra_path = write_report(wb, "diff_report_substituted.xlsx", binary=True)
                 print(f"Extra report saved to: {extra_path}")
 
-    # 15. Print summary
+    # 16. Print summary
     n_changed = sum(1 for d in diffs if d["type"] == "changed")
     n_added   = sum(1 for d in diffs if d["type"] == "added")
     n_deleted = sum(1 for d in diffs if d["type"] == "deleted")
