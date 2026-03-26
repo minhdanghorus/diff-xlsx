@@ -582,6 +582,16 @@ def _xlsx_styles():
     }
 
 
+_ILLEGAL_XML_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]')
+
+
+def _sanitize_xlsx(v):
+    """Strip XML-illegal control characters from string values before writing to openpyxl."""
+    if isinstance(v, str):
+        return _ILLEGAL_XML_RE.sub('', v)
+    return v if v is not None else ""
+
+
 def _write_xlsx_summary(ws, summary_rows, styles):
     from openpyxl.styles import Font
     for row in summary_rows:
@@ -599,7 +609,7 @@ def _write_xlsx_diff_rows(ws, diffs, header_strs, styles, col_offset=2):
         if dtype == "changed":
             for side, row_data, row_fill in [("changed_old", d["row1"], styles["old_fill"]),
                                               ("changed_new", d["row2"], styles["new_fill"])]:
-                ws.append([side, d["label"]] + [v if v is not None else "" for v in row_data])
+                ws.append([side, d["label"]] + [_sanitize_xlsx(v) for v in row_data])
                 r = ws.max_row
                 for c in range(1, len(header_strs) + col_offset + 1):
                     ws.cell(r, c).fill = row_fill
@@ -607,13 +617,13 @@ def _write_xlsx_diff_rows(ws, diffs, header_strs, styles, col_offset=2):
                 for i in d["changed"]:
                     ws.cell(r, col_offset + 1 + i).fill = styles["hl_fill"]
         elif dtype == "added":
-            ws.append(["added", d["label"]] + [v if v is not None else "" for v in d["row2"]])
+            ws.append(["added", d["label"]] + [_sanitize_xlsx(v) for v in d["row2"]])
             r = ws.max_row
             for c in range(1, len(header_strs) + col_offset + 1):
                 ws.cell(r, c).fill = styles["added_fill"]
                 ws.cell(r, c).alignment = styles["wrap"]
         elif dtype == "deleted":
-            ws.append(["deleted", d["label"]] + [v if v is not None else "" for v in d["row1"]])
+            ws.append(["deleted", d["label"]] + [_sanitize_xlsx(v) for v in d["row1"]])
             r = ws.max_row
             for c in range(1, len(header_strs) + col_offset + 1):
                 ws.cell(r, c).fill = styles["deleted_fill"]
