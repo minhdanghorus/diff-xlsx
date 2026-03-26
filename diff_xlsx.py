@@ -719,8 +719,8 @@ def ask_unique_key(headers):
     Ask the user whether there is a unique key column.
     Returns (has_key: bool, key_col: str or None).
     """
-    answer = input("\nDoes the data have a unique key column? (yes/no) [no]: ").strip().lower()
-    if answer not in ("yes", "y"):
+    answer = input("\nDoes the data have a unique key column? (yes/no) [yes]: ").strip().lower()
+    if answer in ("no", "n"):
         return False, None
 
     default = normalize_header(headers[0]) if headers else ""
@@ -737,8 +737,8 @@ def ask_unique_key(headers):
 
 def ask_case_sensitive():
     """Ask whether comparison should be case-sensitive. Default: yes (press Enter)."""
-    answer = input("\nUse case-sensitive comparison? (yes/no) [yes]: ").strip().lower()
-    return answer not in ("no", "n")
+    answer = input("\nUse case-sensitive comparison? (yes/no) [no]: ").strip().lower()
+    return answer in ("yes", "y")
 
 
 def ask_export_format():
@@ -780,8 +780,8 @@ def ask_min_width_columns(headers):
     asking the user which columns to apply a default 100px to.
     Returns dict { col_name: width_str } or None if not requested.
     """
-    answer = input("\nApply minimum column width in HTML report? (yes/no) [no]: ").strip().lower()
-    if answer not in ("yes", "y"):
+    answer = input("\nApply minimum column width in HTML report? (yes/no) [yes]: ").strip().lower()
+    if answer in ("no", "n"):
         return None
 
     header_strs = [normalize_header(h) for h in headers]
