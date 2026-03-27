@@ -248,7 +248,7 @@ def load_aliases():
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            match = re.match(r'^(.+?):\((.+?),(.+?)\)$', line)
+            match = re.match(r'^(.+?):\((.*?),(.*?)\)$', line)
             if not match:
                 print(f"  Warning: skipping malformed line {lineno}: {line!r}")
                 continue
