@@ -592,63 +592,87 @@ def _sanitize_xlsx(v):
     return v if v is not None else ""
 
 
+def _make_cell(ws, value, fill=None, font=None, alignment=None):
+    """Create a WriteOnlyCell with optional styling. Use with write_only workbooks."""
+    from openpyxl.cell import WriteOnlyCell
+    cell = WriteOnlyCell(ws, value=value)
+    if fill is not None:
+        cell.fill = fill
+    if font is not None:
+        cell.font = font
+    if alignment is not None:
+        cell.alignment = alignment
+    return cell
+
+
 def _write_xlsx_summary(ws, summary_rows, styles):
     from openpyxl.styles import Font
+    bold = Font(bold=True)
     for row in summary_rows:
         if not row:
             ws.append([])
         else:
-            ws.append(row)
-            ws.cell(ws.max_row, 1).font = Font(bold=True)
+            cells = [_make_cell(ws, row[0], font=bold)]
+            cells += [_make_cell(ws, v) for v in row[1:]]
+            ws.append(cells)
 
 
 def _write_xlsx_diff_rows(ws, diffs, header_strs, styles, col_offset=2):
-    """Write diff data rows. col_offset=2 accounts for diff_type and row_key columns."""
+    """Write diff data rows using pre-styled WriteOnlyCell objects."""
+    wrap = styles["wrap"]
     for d in diffs:
         dtype = d["type"]
         if dtype == "changed":
-            for side, row_data, row_fill in [("changed_old", d["row1"], styles["old_fill"]),
-                                              ("changed_new", d["row2"], styles["new_fill"])]:
-                ws.append([side, d["label"]] + [_sanitize_xlsx(v) for v in row_data])
-                r = ws.max_row
-                for c in range(1, len(header_strs) + col_offset + 1):
-                    ws.cell(r, c).fill = row_fill
-                    ws.cell(r, c).alignment = styles["wrap"]
-                for i in d["changed"]:
-                    ws.cell(r, col_offset + 1 + i).fill = styles["hl_fill"]
+            changed_set = d["changed"]
+            for side, row_data, row_fill in [
+                ("changed_old", d["row1"], styles["old_fill"]),
+                ("changed_new", d["row2"], styles["new_fill"]),
+            ]:
+                cells = [
+                    _make_cell(ws, side, fill=row_fill, alignment=wrap),
+                    _make_cell(ws, d["label"], fill=row_fill, alignment=wrap),
+                ]
+                for idx, v in enumerate(row_data):
+                    fill = styles["hl_fill"] if idx in changed_set else row_fill
+                    cells.append(_make_cell(ws, _sanitize_xlsx(v), fill=fill, alignment=wrap))
+                ws.append(cells)
         elif dtype == "added":
-            ws.append(["added", d["label"]] + [_sanitize_xlsx(v) for v in d["row2"]])
-            r = ws.max_row
-            for c in range(1, len(header_strs) + col_offset + 1):
-                ws.cell(r, c).fill = styles["added_fill"]
-                ws.cell(r, c).alignment = styles["wrap"]
+            fill = styles["added_fill"]
+            cells = [
+                _make_cell(ws, "added", fill=fill, alignment=wrap),
+                _make_cell(ws, d["label"], fill=fill, alignment=wrap),
+            ]
+            for v in d["row2"]:
+                cells.append(_make_cell(ws, _sanitize_xlsx(v), fill=fill, alignment=wrap))
+            ws.append(cells)
         elif dtype == "deleted":
-            ws.append(["deleted", d["label"]] + [_sanitize_xlsx(v) for v in d["row1"]])
-            r = ws.max_row
-            for c in range(1, len(header_strs) + col_offset + 1):
-                ws.cell(r, c).fill = styles["deleted_fill"]
-                ws.cell(r, c).alignment = styles["wrap"]
+            fill = styles["deleted_fill"]
+            cells = [
+                _make_cell(ws, "deleted", fill=fill, alignment=wrap),
+                _make_cell(ws, d["label"], fill=fill, alignment=wrap),
+            ]
+            for v in d["row1"]:
+                cells.append(_make_cell(ws, _sanitize_xlsx(v), fill=fill, alignment=wrap))
+            ws.append(cells)
 
 
-def _write_xlsx_header_row(ws, col_headers, styles):
-    ws.append(col_headers)
-    r = ws.max_row
-    for c in range(1, len(col_headers) + 1):
-        ws.cell(r, c).fill = styles["header_fill"]
-        ws.cell(r, c).font = styles["header_font"]
-    # Freeze all rows above and including the header row
-    from openpyxl.utils.cell import get_column_letter
-    ws.freeze_panes = f"A{r + 1}"
+def _write_xlsx_header_row(ws, col_headers, styles, freeze_row):
+    """Write header row with styling and freeze panes above it."""
+    cells = [
+        _make_cell(ws, h, fill=styles["header_fill"], font=styles["header_font"])
+        for h in col_headers
+    ]
+    ws.append(cells)
+    ws.freeze_panes = f"A{freeze_row}"
 
 
 def generate_xlsx_report(diffs, headers, file1_name, file2_name, case_sensitive=True,
                          ignore_substrings=None, total_rows_compared=0, skip_columns=None,
-                         hide_columns=None, keep_in_summary=True):
+                         hide_columns=None, keep_in_summary=True, aliases=None):
     from openpyxl import Workbook
     styles = _xlsx_styles()
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Diff"
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet(title="Diff")
 
     summary = _summary_rows(file1_name, file2_name, case_sensitive, ignore_substrings,
                             total_rows_compared, diffs, skip_columns, headers,
@@ -657,7 +681,9 @@ def generate_xlsx_report(diffs, headers, file1_name, file2_name, case_sensitive=
 
     visible_headers, filtered_diffs = _filter_for_report(diffs, headers, hide_columns)
     visible_strs = [normalize_header(h) for h in visible_headers]
-    _write_xlsx_header_row(ws, ["diff_type", "row_key"] + visible_strs, styles)
+    # freeze_row = summary rows + header row + 1 (freeze below header)
+    freeze_row = len(summary) + 2
+    _write_xlsx_header_row(ws, ["diff_type", "row_key"] + visible_strs, styles, freeze_row)
     _write_xlsx_diff_rows(ws, filtered_diffs, visible_strs, styles)
     return wb
 
@@ -665,6 +691,7 @@ def generate_xlsx_report(diffs, headers, file1_name, file2_name, case_sensitive=
 def generate_extra_xlsx(diffs, headers, file1_name, file2_name, col_sub1, col_sub2,
                         diff_col_indices=None):
     from openpyxl import Workbook
+    from openpyxl.styles import Font
     header_strs = [normalize_header(h) for h in headers]
     if diff_col_indices is None:
         diff_col_indices = sorted({i for d in diffs if d["type"] == "changed" for i in d["changed"]})
@@ -672,20 +699,22 @@ def generate_extra_xlsx(diffs, headers, file1_name, file2_name, col_sub1, col_su
         return None
 
     diff_headers = [header_strs[i] for i in diff_col_indices]
+    # Pre-build position lookup to avoid O(n) list.index() inside the row loop
+    diff_col_pos = {orig: pos for pos, orig in enumerate(diff_col_indices)}
     styles = _xlsx_styles()
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Diff (Post-Substitution)"
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet(title="Diff (Post-Substitution)")
+    bold = Font(bold=True)
 
-    from openpyxl.styles import Font
     for label, value in [("File 1", file1_name), ("File 2", file2_name),
                          ("Note", "Cell values after substitution rules applied. Only changed rows and differing columns.")]:
-        ws.append([label, value])
-        ws.cell(ws.max_row, 1).font = Font(bold=True)
+        ws.append([_make_cell(ws, label, font=bold), _make_cell(ws, value)])
     ws.append([])
 
-    _write_xlsx_header_row(ws, ["diff_type", "row_key"] + diff_headers, styles)
+    # 3 metadata rows + 1 empty row = 4 rows before header; freeze below header row 5
+    _write_xlsx_header_row(ws, ["diff_type", "row_key"] + diff_headers, styles, freeze_row=6)
 
+    wrap = styles["wrap"]
     for d in diffs:
         if d["type"] != "changed":
             continue
@@ -697,17 +726,18 @@ def generate_extra_xlsx(diffs, headers, file1_name, file2_name, col_sub1, col_su
             apply_substitutions(d["row2"][i], col_sub2[i]) if col_sub2[i] else (d["row2"][i] if d["row2"][i] is not None else "")
             for i in diff_col_indices
         ]
-        changed_new = {diff_col_indices.index(i) for i in d["changed"]}
+        changed_new = {diff_col_pos[i] for i in d["changed"] if i in diff_col_pos}
 
         for side, row_data, row_fill in [("changed_old", r1_sub, styles["old_fill"]),
                                           ("changed_new", r2_sub, styles["new_fill"])]:
-            ws.append([side, d["label"]] + row_data)
-            r = ws.max_row
-            for c in range(1, len(diff_headers) + 3):
-                ws.cell(r, c).fill = row_fill
-                ws.cell(r, c).alignment = styles["wrap"]
-            for ci in changed_new:
-                ws.cell(r, 3 + ci).fill = styles["hl_fill"]
+            cells = [
+                _make_cell(ws, side, fill=row_fill, alignment=wrap),
+                _make_cell(ws, d["label"], fill=row_fill, alignment=wrap),
+            ]
+            for ci, v in enumerate(row_data):
+                fill = styles["hl_fill"] if ci in changed_new else row_fill
+                cells.append(_make_cell(ws, _sanitize_xlsx(v), fill=fill, alignment=wrap))
+            ws.append(cells)
 
     return wb
 
