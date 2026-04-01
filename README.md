@@ -4,8 +4,10 @@ Compare two `.xlsx` or `.csv` files with the same column structure and generate 
 
 ## Features
 
-### File Support
+### Data Sources
 - Supports `.xlsx` and `.csv` files (auto-detects delimiter for CSV)
+- Supports **PostgreSQL databases** via `sql_src/` — run queries against saved connection profiles
+- **Mix and match**: compare a file against a SQL query result, or any combination
 - Reads the first sheet of each `.xlsx` file
 - Automatically ignores fully-empty columns and trailing empty rows
 - Prompts to choose files if more than 2 are found in the `source/` folder
@@ -42,6 +44,7 @@ Compare two `.xlsx` or `.csv` files with the same column structure and generate 
 
 - Python 3.8+
 - `openpyxl`
+- `psycopg2-binary` (for PostgreSQL support)
 
 ## Setup
 
@@ -70,7 +73,7 @@ pip install -r requirements.txt
 
 ## Usage
 
-1. Place your files in the `source/` folder:
+1. Place your files in the `source/` folder (for file-based comparison):
    ```
    source/
    ├── file_a.xlsx
@@ -78,15 +81,27 @@ pip install -r requirements.txt
    ```
    More than 2 files? The tool will prompt you to choose which two to compare.
 
-2. (Optional) Add configuration files in the project root — see [Configuration Files](#configuration-files).
+2. (Optional) Set up SQL connection profiles — see [SQL Database Support](#sql-database-support).
 
-3. Run:
+3. (Optional) Add configuration files in the project root — see [Configuration Files](#configuration-files).
+
+4. Run:
    ```bash
    python diff_xlsx.py
    ```
 
-4. Answer the prompts (all have defaults — just press Enter to skip):
+5. Answer the prompts (all have defaults — just press Enter to skip):
    ```
+   Source 1: Where to read data from?
+     1. File (xlsx/csv)
+     2. SQL (PostgreSQL)
+   Select (1/2) [default: 1]:
+
+   Source 2: Where to read data from?
+     1. File (xlsx/csv)
+     2. SQL (PostgreSQL)
+   Select (1/2) [default: 1]:
+
    Export format (html/csv/xlsx) [html]:
    Does the data have a unique key column? (yes/no) [no]:
    Use case-sensitive comparison? (yes/no) [yes]:
@@ -181,6 +196,59 @@ Part 2 of 5  |  <- Previous  |  Next ->
 
 Changed rows: 3/12   Added rows: 1/3   Deleted rows: 0/1
 ```
+
+---
+
+## SQL Database Support
+
+The `sql_src/` folder contains everything needed to read data from PostgreSQL databases.
+
+### Setup
+
+1. **Configure connection profiles** in `sql_src/config.py`:
+   ```python
+   CONNECTIONS = {
+       "local_docker": {
+           "host": "localhost",
+           "port": 5432,
+           "database": "mydb",
+           "user": "postgres",
+           "password": "postgres",
+       },
+       "staging": {
+           "host": "staging.example.com",
+           "port": 5432,
+           "database": "app_db",
+           "user": "readonly",
+           "password": "secret",
+       },
+   }
+   ```
+
+2. **Test your connection**:
+   ```bash
+   python sql_src/db.py
+   ```
+   This lets you pick a profile (or test all) and verifies connectivity.
+
+3. **(Optional) Save reusable queries** as `.sql` files in `sql_src/`:
+   ```
+   sql_src/
+   ├── config.py
+   ├── db.py
+   ├── employees_odoo.sql
+   └── employees_ats.sql
+   ```
+   When choosing SQL as a source, the tool lists available `.sql` files or lets you enter a query manually.
+
+### How it works
+
+When you select SQL for a source, the tool prompts you to:
+1. Pick a connection profile
+2. Pick a `.sql` file or enter a query manually
+3. The query is executed and results are returned as `(headers, rows)` — identical format to file reading, so all downstream comparison and reporting works the same.
+
+Each source is independent — you can compare SQL vs SQL (same or different servers), SQL vs file, or file vs file.
 
 ---
 

@@ -1290,7 +1290,9 @@ def main():
         print("  1. File (xlsx/csv)")
         print("  2. SQL (PostgreSQL)")
         while True:
-            choice = input("Select (1/2): ").strip()
+            choice = input("Select (1/2) [default: 1]: ").strip()
+            if choice == "":
+                return "file"
             if choice in ("1", "2"):
                 return "file" if choice == "1" else "sql"
             print("Please enter 1 or 2.")
