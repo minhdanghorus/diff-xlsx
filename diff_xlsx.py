@@ -16,6 +16,7 @@ import re
 import shutil
 from openpyxl import load_workbook
 from collections import OrderedDict
+from sql_src.db import read_sql_source
 
 
 # ─── File Discovery ───────────────────────────────────────────────────────────
@@ -1283,18 +1284,74 @@ def generate_html(diffs, headers, file1_name, file2_name, case_sensitive=True, i
 def main():
     print("=== Diff Tool ===")
 
-    # 1. Resolve the two files
-    file1, file2 = get_files()
-    print(f"\nComparing:")
-    print(f"  File 1: {os.path.basename(file1)}")
-    print(f"  File 2: {os.path.basename(file2)}")
+    # 1. Ask source type for each side
+    def ask_source_type(label):
+        print(f"\n{label}: Where to read data from?")
+        print("  1. File (xlsx/csv)")
+        print("  2. SQL (PostgreSQL)")
+        while True:
+            choice = input("Select (1/2): ").strip()
+            if choice in ("1", "2"):
+                return "file" if choice == "1" else "sql"
+            print("Please enter 1 or 2.")
 
-    # 2. Read both files (first sheet, ignore empty cols/trailing rows)
-    print("\nReading files...")
-    headers1, rows1 = read_sheet(file1)
-    headers2, rows2 = read_sheet(file2)
-    print(f"  File 1: {len(rows1)} data rows, {len(headers1)} columns")
-    print(f"  File 2: {len(rows2)} data rows, {len(headers2)} columns")
+    src_type1 = ask_source_type("Source 1")
+    src_type2 = ask_source_type("Source 2")
+
+    # 2. Resolve files if needed (only when at least one source is a file)
+    file1 = file2 = None
+    if src_type1 == "file" and src_type2 == "file":
+        file1, file2 = get_files()
+    elif src_type1 == "file" or src_type2 == "file":
+        # Only one file needed — let user pick from source/
+        source_dir = os.path.join(os.getcwd(), "source")
+        if not os.path.isdir(source_dir):
+            raise FileNotFoundError(f"'source' directory not found at: {os.getcwd()}")
+        files = sorted(
+            glob.glob(os.path.join(source_dir, "*.xlsx")) +
+            glob.glob(os.path.join(source_dir, "*.csv"))
+        )
+        if not files:
+            raise FileNotFoundError("No .xlsx or .csv files found in 'source' directory.")
+        which = "Source 1" if src_type1 == "file" else "Source 2"
+        print(f"\nSelect file for {which}:")
+        for i, f in enumerate(files, 1):
+            print(f"  {i}. {os.path.basename(f)}")
+        while True:
+            try:
+                choice = int(input("Enter file number: ").strip())
+                if 1 <= choice <= len(files):
+                    if src_type1 == "file":
+                        file1 = files[choice - 1]
+                    else:
+                        file2 = files[choice - 1]
+                    break
+                print(f"Please enter a number between 1 and {len(files)}.")
+            except ValueError:
+                print("Please enter a valid number.")
+
+    # 3. Read data from each source
+    f1_name = f2_name = None
+
+    if src_type1 == "file":
+        print(f"\nReading Source 1: {os.path.basename(file1)} ...")
+        headers1, rows1 = read_sheet(file1)
+        f1_name = os.path.basename(file1)
+    else:
+        print("\n--- Source 1 (SQL) ---")
+        f1_name, headers1, rows1 = read_sql_source()
+
+    if src_type2 == "file":
+        print(f"\nReading Source 2: {os.path.basename(file2)} ...")
+        headers2, rows2 = read_sheet(file2)
+        f2_name = os.path.basename(file2)
+    else:
+        print("\n--- Source 2 (SQL) ---")
+        f2_name, headers2, rows2 = read_sql_source()
+
+    print(f"\nComparing:")
+    print(f"  Source 1: {f1_name} — {len(rows1)} data rows, {len(headers1)} columns")
+    print(f"  Source 2: {f2_name} — {len(rows2)} data rows, {len(headers2)} columns")
 
     # 3. Validate same column structure
     print("Checking column format...")
@@ -1335,8 +1392,6 @@ def main():
 
     # 10. Compare
     print("\nComparing rows...")
-    f1_name = os.path.basename(file1)
-    f2_name = os.path.basename(file2)
     if has_key:
         diffs = compare_by_key(headers1, rows1, rows2, key_col, case_sensitive, aliases,
                                skip_columns, ignore_substrings, f1_name, f2_name)
